@@ -13,6 +13,7 @@ type t('v) =
   | Leaf(boxT('v), int)
   | Empty;
 
+let make: unit => t('v);
 let get: (t('v), k) => option('v);
 let delete: (t('v), k) => t('v);
 let set: (t('v), k, 'v) => t('v);

@@ -44,6 +44,8 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
 /*-- Main methods -------------------------------------*/
 
+let make = () => Index(0, [||]);
+
 let get = (map: t('v), k: k): option('v) => {
   let code = hash(k);
 
