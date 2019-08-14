@@ -1,14 +1,17 @@
 type k = string;
 
-type boxT('v) =
-  | Permanent('v)
-  | Optimistic('v, int, option(boxT('v)));
+type boxT('v) = {
+  key: k,
+  value: 'v,
+  id: int,
+  prev: option(boxT('v)),
+};
 
 type t('v) =
   | Index(int, array(t('v)))
   | Value(k, 'v, int)
   | ValueChain(k, boxT('v), int)
-  | Collision(array((k, boxT('v))), int);
+  | Collision(array(boxT('v)), int);
 
 /*-- Helpers -------------------------------------*/
 
@@ -39,6 +42,8 @@ let hammingWeight = (x: int) => {
 
 let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
+let boxPerm = (k: k, v: 'v) => {key: k, value: v, id: 0, prev: None};
+
 /*-- Main methods -------------------------------------*/
 
 let get = (map: t('v), k: k): option('v) => {
@@ -58,16 +63,13 @@ let get = (map: t('v), k: k): option('v) => {
       };
 
     | Collision(bucket, _) =>
-      switch (Js.Array.find(((key, _)) => key === k, bucket)) {
-      | Some((_, Permanent(value) | Optimistic(value, _, _))) =>
-        Some(value)
+      switch (Js.Array.find(({key}) => key === k, bucket)) {
+      | Some({value}) => Some(value)
       | None => None
       }
 
     | Value(key, value, _) when key === k => Some(value)
-    | ValueChain(key, box, _) when key === k =>
-      let Permanent(value) | Optimistic(value, _, _) = box;
-      Some(value);
+    | ValueChain(key, {value}, _) when key === k => Some(value)
 
     | Value(_)
     | ValueChain(_) => None
@@ -123,14 +125,15 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
     | ValueChain(key, _, _) when key === k => Value(key, v, code)
 
     | Value(key, value, c) when c === code =>
-      Collision([|(k, Permanent(v)), (key, Permanent(value))|], code)
-    | ValueChain(key, box, c) when c === code =>
-      Collision([|(k, Permanent(v)), (key, box)|], code)
+      Collision([|boxPerm(k, v), boxPerm(key, value)|], code)
+
+    | ValueChain(_, box, c) when c === code =>
+      Collision([|boxPerm(k, v), box|], code)
 
     | Collision(bucket, c) when c === code =>
       let bucket =
-        Js.Array.filter(((key, _)) => key !== k, bucket)
-        |> Js.Array.concat([|(k, Permanent(v))|]);
+        Js.Array.filter(({key}) => key !== k, bucket)
+        |> Js.Array.concat([|boxPerm(k, v)|]);
       Collision(bucket, code);
 
     | Value(_, _, c) as n
