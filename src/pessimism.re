@@ -8,7 +8,7 @@ type t('v) =
   | Index(int, array(t('v)))
   | Value(k, 'v, int)
   | ValueChain(k, boxT('v), int)
-  | Collision(list((k, boxT('v))), int);
+  | Collision(array((k, boxT('v))), int);
 
 /*-- Helpers -------------------------------------*/
 
@@ -63,17 +63,11 @@ let get = (map: t('v), k: k): option('v) => {
       };
 
     | Collision(bucket, _) =>
-      List.fold_left(
-        (res, (key, box)) =>
-          if (key === k) {
-            let Permanent(value) | Optimistic(value, _, _) = box;
-            Some(value);
-          } else {
-            res;
-          },
-        None,
-        bucket,
-      )
+      switch (Js.Array.find(((key, _)) => key === k, bucket)) {
+      | Some((_, Permanent(value) | Optimistic(value, _, _))) =>
+        Some(value)
+      | None => None
+      }
 
     | Value(key, value, _) when key === k => Some(value)
     | ValueChain(key, box, _) when key === k =>
@@ -112,7 +106,7 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
       let bitmap = bitmap lor pos;
       let index = indexBit(bitmap, pos);
 
-      let contents = Array.copy(contents);
+      let contents = Js.Array.copy(contents);
       let contents =
         if (has !== 0) {
           let node = traverse(Array.unsafe_get(contents, index), depth + 1);
@@ -134,13 +128,15 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
     | ValueChain(key, _, _) when key === k => Value(key, v, code)
 
     | Value(key, value, c) when c === code =>
-      Collision([(k, Permanent(v)), (key, Permanent(value))], code)
+      Collision([|(k, Permanent(v)), (key, Permanent(value))|], code)
     | ValueChain(key, box, c) when c === code =>
-      Collision([(k, Permanent(v)), (key, box)], code)
+      Collision([|(k, Permanent(v)), (key, box)|], code)
 
     | Collision(bucket, c) when c === code =>
-      let bucket = List.filter(((key, _)) => key !== k, bucket);
-      Collision([(k, Permanent(v)), ...bucket], code);
+      let bucket =
+        Js.Array.filter(((key, _)) => key !== k, bucket)
+        |> Js.Array.concat([|(k, Permanent(v))|]);
+      Collision(bucket, code);
 
     | Value(_, _, c) as n
     | ValueChain(_, _, c) as n
