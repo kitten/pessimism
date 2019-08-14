@@ -173,7 +173,9 @@ let remove = (map: t('v), k: k): t('v) => {
             depth === 0 ? empty : Empty;
           } else {
             let contents = Js.Array.copy(contents);
-            ignore(Js.Array.removeFromInPlace(~pos=index, contents));
+            ignore(
+              Js.Array.removeCountInPlace(~pos=index, ~count=1, contents),
+            );
             Index(bitmap, contents);
           };
         } else {
