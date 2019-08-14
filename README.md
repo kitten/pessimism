@@ -32,7 +32,7 @@ Map.get(map, "key"); // undefined
 Optimistic entries can be set using `setOptimistic` and cleared using `clearOptimistic`:
 
 ```js
-import * as Map from 'react';
+import * as Map from 'pessimism';
 
 let map = Map.set(Map.make(), "key", "value");
 // Set an optimistic entry with the ID 1
