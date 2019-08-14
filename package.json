@@ -1,0 +1,92 @@
+{
+  "name": "pessimism",
+  "description": "A fast HAMT Map intended for KV caching and optimistic updates",
+  "version": "1.0.0",
+  "author": "Phil Pluckthun <phil@kitten.sh>",
+  "source": "./src/index.js",
+  "main": "./dist/pessimism.js",
+  "module": "./dist/pessimism.es.js",
+  "jsnext:main": "./dist/pessimism.es.js",
+  "types": "./src/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "src",
+    "lib/js",
+    "dist",
+    "docs/*.md",
+    "*.md",
+    "index.js.flow",
+    "bsconfig.json"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit",
+    "clean": "bsb -clean-world",
+    "build": "bsb -make-world",
+    "watch": "bsb -make-world -w",
+    "test": "jest",
+    "coverage": "jest -c ./.jest.coverage.json --coverage",
+    "test:watch": "jest --watch",
+    "refmt": "bsrefmt --in-place **/**/*.{re,rei}",
+    "flowgen": "./scripts/generate-flow-files.js",
+    "bundle": "rollup -c rollup.config.js",
+    "prepublishOnly": "run-s clean build bundle flowgen check test",
+    "codecov": "codecov"
+  },
+  "keywords": [
+    "hamt",
+    "kv",
+    "cache",
+    "optimistic"
+  ],
+  "repository": "https://github.com/kitten/pessimism",
+  "bugs": {
+    "url": "https://github.com/kitten/pessimism/issues"
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@glennsl/bs-jest": "^0.4.8",
+    "bs-platform": "^5.0.6",
+    "codecov": "^3.5.0",
+    "flowgen": "^1.9.2",
+    "globby": "^10.0.1",
+    "husky": "^3.0.1",
+    "lint-staged": "^9.2.1",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^1.18.2",
+    "rollup": "^1.17.0",
+    "rollup-plugin-buble": "^0.19.8",
+    "rollup-plugin-commonjs": "^10.0.1",
+    "rollup-plugin-node-resolve": "^5.2.0",
+    "rollup-plugin-prettier": "^0.6.0",
+    "rollup-plugin-terser": "^5.1.1",
+    "typescript": "^3.5.3"
+  },
+  "lint-staged": {
+    "*.{d.ts,js}": [
+      "prettier --write",
+      "git add"
+    ],
+    "*.{re,rei}": [
+      "bsrefmt --in-place",
+      "git add"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "prettier": {
+    "singleQuote": true,
+    "printWidth": 100
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js"
+    ],
+    "testMatch": [
+      "**/lib/js/__tests__/*_test.js"
+    ]
+  }
+}
