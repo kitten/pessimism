@@ -12,16 +12,11 @@ type t('v) =
 
 /*-- Helpers -------------------------------------*/
 
-let size_of_mask = 5;
-let size_of_bucket = 32;
-let bitmap_of_mask = size_of_bucket - 1;
-
-let mask = (x: int, pos: int) =>
-  x lsr (pos * size_of_mask) land bitmap_of_mask;
+let mask = (x: int, pos: int) => 1 lsl (x lsr (pos * 5) land 31);
 
 let smi = (x: int) => x lsr 1 land 0x40000000 lor (x land 0xbfffffff);
 
-let djb2 = (x: string) => {
+let hash = (x: string) => {
   let length = String.length(x);
   let rec explode = (h, i) =>
     if (i < length) {
@@ -30,7 +25,7 @@ let djb2 = (x: string) => {
     } else {
       h;
     };
-  explode(5381, 0);
+  smi(explode(5381, 0));
 };
 
 let hammingWeight = (x: int) => {
@@ -47,12 +42,12 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 /*-- Main methods -------------------------------------*/
 
 let get = (map: t('v), k: k): option('v) => {
-  let code = smi(djb2(k));
+  let code = hash(k);
 
   let rec traverse = (node: t('a), depth: int) =>
     switch (node) {
     | Index(bitmap, contents) =>
-      let pos = 1 lsl mask(code, depth);
+      let pos = mask(code, depth);
       let has = bitmap land pos;
       if (has !== 0) {
         let index = indexBit(bitmap, pos);
@@ -82,11 +77,11 @@ let get = (map: t('v), k: k): option('v) => {
 };
 
 let set = (map: t('v), k: k, v: 'v): t('v) => {
-  let code = smi(djb2(k));
+  let code = hash(k);
 
   let rec nest = (code_a, code_b, a, b, depth) => {
-    let pos_a = 1 lsl mask(code_a, depth);
-    let pos_b = 1 lsl mask(code_b, depth);
+    let pos_a = mask(code_a, depth);
+    let pos_b = mask(code_b, depth);
     let bitmap = pos_a lor pos_b;
     let contents =
       if (pos_a === pos_b) {
@@ -101,7 +96,7 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
   let rec traverse = (node, depth) =>
     switch (node) {
     | Index(bitmap, contents) =>
-      let pos = 1 lsl mask(code, depth);
+      let pos = mask(code, depth);
       let has = bitmap land pos;
       let bitmap = bitmap lor pos;
       let index = indexBit(bitmap, pos);
