@@ -10,7 +10,8 @@ type boxT('v) = {
 type t('v) =
   | Index(int, array(t('v)))
   | Collision(array(boxT('v)), int)
-  | Leaf(boxT('v), int);
+  | Leaf(boxT('v), int)
+  | Empty;
 
 /*-- Helpers -------------------------------------*/
 
@@ -66,6 +67,8 @@ let get = (map: t('v), k: k): option('v) => {
       }
 
     | Leaf({key, value}, _) when key === k => Some(value)
+
+    | Empty
     | Leaf(_) => None
     };
 
@@ -141,9 +144,77 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
     | Leaf(_, c) as n
     | Collision(_, c) as n =>
       make_index(c, code, n, Leaf(vbox, code), depth)
+
+    | Empty => Leaf(vbox, code)
     };
 
   traverse(map, 0);
 };
 
 let set = (map, k, v) => setOptimistic(map, k, v, 0);
+
+let clear_box = (box: boxT('a), optid: int) => {
+  let rec filter = (x: option(boxT('a))) =>
+    switch (x) {
+    | Some({id, prev}) when id === optid => filter(prev)
+    | Some(b) => Some({...b, prev: filter(b.prev)})
+    | None => None
+    };
+  filter(Some(box));
+};
+
+let clearOptimistic = (map: t('v), optid: int): t('v) => {
+  let rec traverse = (node, depth) =>
+    switch (node) {
+    | Leaf({id} as box, code) when id !== 0 =>
+      switch (clear_box(box, optid)) {
+      | Some(box) => Leaf(box, code)
+      | None => Empty
+      }
+
+    | Leaf(_) as n => n
+
+    | Index(bitmap, contents) =>
+      let hasContent = ref(false);
+      let contents =
+        Js.Array.map(
+          node => {
+            let node = traverse(node, depth + 1);
+            if (node !== Empty) {
+              hasContent := true;
+            };
+            node;
+          },
+          contents,
+        );
+      hasContent^ ? Index(bitmap, contents) : Empty;
+
+    | Collision(bucket, code) =>
+      let bucket =
+        Js.Array.reduce(
+          (acc, box) =>
+            if (box.id !== 0) {
+              switch (clear_box(box, optid)) {
+              | Some(box) =>
+                ignore(Js.Array.push(box, acc));
+                acc;
+              | None => acc
+              };
+            } else {
+              ignore(Js.Array.push(box, acc));
+              acc;
+            },
+          [||],
+          bucket,
+        );
+      switch (bucket) {
+      | [||] => Empty
+      | [|box|] => Leaf(box, code)
+      | _ => Collision(bucket, code)
+      };
+
+    | Empty => Empty
+    };
+
+  traverse(map, 0);
+};
