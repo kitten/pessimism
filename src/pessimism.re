@@ -94,7 +94,7 @@ let rec make_index = (code_a, code_b, a, b, depth) => {
 
 let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
   let code = hash(k);
-  let optimistic = id === 0;
+  let optimistic = id !== 0;
   let vbox = {key: k, value: v, id, prev: None};
 
   let rec traverse = (node, depth) =>
@@ -237,7 +237,11 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
           },
           contents,
         );
-      hasContent^ ? Index(bitmap, contents) : Empty;
+      if (hasContent^) {
+        Index(bitmap, contents);
+      } else {
+        depth === 0 ? empty : Empty;
+      };
 
     | Collision(bucket, code) =>
       let bucket =
