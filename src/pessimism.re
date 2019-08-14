@@ -103,23 +103,23 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
       let has = bitmap land pos;
       let bitmap = bitmap lor pos;
       let index = indexBit(bitmap, pos);
-
-      let contents =
-        if (has !== 0) {
-          let node =
-            traverse(Js.Array.unsafe_get(contents, index), depth + 1);
-          let contents = Js.Array.copy(contents);
-          Array.unsafe_set(contents, index, node);
-          contents;
-        } else {
+      if (has !== 0) {
+        let node = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
+        let contents = Js.Array.copy(contents);
+        Array.unsafe_set(contents, index, node);
+        Index(bitmap, contents);
+      } else {
+        let contents = Js.Array.copy(contents);
+        ignore(
           Js.Array.spliceInPlace(
             ~pos=index,
             ~remove=0,
             ~add=[|Leaf(vbox, code)|],
-            Js.Array.copy(contents),
-          );
-        };
-      Index(bitmap, contents);
+            contents,
+          ),
+        );
+        Index(bitmap, contents);
+      };
 
     | Leaf({key} as box, _) when key === k && optimistic =>
       Leaf({...vbox, prev: Some(box)}, code)
@@ -171,11 +171,8 @@ let remove = (map: t('v), k: k): t('v) => {
           if (bitmap === 0) {
             Empty;
           } else {
-            let contents =
-              Js.Array.removeFromInPlace(
-                ~pos=index,
-                Js.Array.copy(contents),
-              );
+            let contents = Js.Array.copy(contents);
+            ignore(Js.Array.removeFromInPlace(~pos=index, contents));
             Index(bitmap, contents);
           };
         } else {
