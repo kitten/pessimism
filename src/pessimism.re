@@ -153,6 +153,56 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
 
 let set = (map, k, v) => setOptimistic(map, k, v, 0);
 
+let delete = (map: t('v), k: k): t('v) => {
+  let code = hash(k);
+
+  let rec traverse = (node, depth) =>
+    switch (node) {
+    | Index(bitmap, contents) =>
+      let pos = mask(code, depth);
+      let has = bitmap land pos;
+      let index = indexBit(bitmap, pos);
+      if (has !== 0) {
+        let node = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
+        if (node === Empty) {
+          let bitmap = bitmap lxor pos;
+          if (bitmap === 0) {
+            Empty;
+          } else {
+            let contents =
+              Js.Array.removeFromInPlace(
+                ~pos=index,
+                Js.Array.copy(contents),
+              );
+            Index(bitmap, contents);
+          };
+        } else {
+          let contents = Js.Array.copy(contents);
+          Js.Array.unsafe_set(contents, index, node);
+          Index(bitmap, contents);
+        };
+      } else {
+        node;
+      };
+
+    | Leaf({key}, _) when key === k => Empty
+    | Leaf(_) => node
+
+    | Collision(bucket, c) when c === code =>
+      let bucket = Js.Array.filter(({key}) => key === k, bucket);
+      switch (bucket) {
+      | [||] => Empty
+      | [|box|] => Leaf(box, code)
+      | _ => Collision(bucket, code)
+      };
+    | Collision(_) => node
+
+    | Empty => Empty
+    };
+
+  traverse(map, 0);
+};
+
 let clear_box = (box: boxT('a), optid: int) => {
   let rec filter = (x: option(boxT('a))) =>
     switch (x) {
