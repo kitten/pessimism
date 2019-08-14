@@ -155,7 +155,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
 
 let set = (map, k, v) => setOptimistic(map, k, v, 0);
 
-let delete = (map: t('v), k: k): t('v) => {
+let remove = (map: t('v), k: k): t('v) => {
   let code = hash(k);
 
   let rec traverse = (node, depth) =>
