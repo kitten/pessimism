@@ -38,5 +38,3 @@ __tests__/**/*.js
 coverage/
 _esy/
 public/
-
-!src/index.js
