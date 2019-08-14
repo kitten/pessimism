@@ -53,7 +53,7 @@ let get = (map: t('v), k: k): option('v) => {
       let has = bitmap land pos;
       if (has !== 0) {
         let index = indexBit(bitmap, pos);
-        let child = Array.unsafe_get(contents, index);
+        let child = Js.Array.unsafe_get(contents, index);
         traverse(child, depth + 1);
       } else {
         None;
@@ -86,9 +86,10 @@ let rec make_index = (code_a, code_b, a, b, depth) => {
   Index(bitmap, contents);
 };
 
-let set = (map: t('v), k: k, v: 'v): t('v) => {
+let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
   let code = hash(k);
-  let vbox = {key: k, value: v, id: 0, prev: None};
+  let optimistic = id === 0;
+  let vbox = {key: k, value: v, id, prev: None};
 
   let rec traverse = (node, depth) =>
     switch (node) {
@@ -100,7 +101,8 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
 
       let contents =
         if (has !== 0) {
-          let node = traverse(Array.unsafe_get(contents, index), depth + 1);
+          let node =
+            traverse(Js.Array.unsafe_get(contents, index), depth + 1);
           let contents = Js.Array.copy(contents);
           Array.unsafe_set(contents, index, node);
           contents;
@@ -114,15 +116,27 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
         };
       Index(bitmap, contents);
 
+    | Leaf({key} as box, _) when key === k && optimistic =>
+      Leaf({...vbox, prev: Some(box)}, code)
+
     | Leaf({key}, _) when key === k => Leaf(vbox, code)
 
     | Leaf(box, c) when c === code => Collision([|vbox, box|], code)
 
     | Collision(bucket, c) when c === code =>
-      let bucket =
-        Js.Array.filter(({key}) => key !== k, bucket)
-        |> Js.Array.concat([|vbox|]);
-      Collision(bucket, code);
+      let index = Js.Array.findIndex(({key}) => key === k, bucket);
+      if (index > (-1)) {
+        let prev = Js.Array.unsafe_get(bucket, index);
+        let bucket = Js.Array.copy(bucket);
+        Js.Array.unsafe_set(
+          bucket,
+          index,
+          optimistic ? {...vbox, prev: Some(prev)} : vbox,
+        );
+        Collision(bucket, code);
+      } else {
+        Collision(Js.Array.concat(bucket, [|vbox|]), code);
+      };
 
     | Leaf(_, c) as n
     | Collision(_, c) as n =>
@@ -131,3 +145,5 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
 
   traverse(map, 0);
 };
+
+let set = (map, k, v) => setOptimistic(map, k, v, 0);

@@ -14,3 +14,4 @@ type t('v) =
 
 let get: (t('v), string) => option('v);
 let set: (t('v), string, 'v) => t('v);
+let setOptimistic: (t('v), string, 'v, int) => t('v);
