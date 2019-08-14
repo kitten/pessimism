@@ -20,7 +20,7 @@ npm install --save pessimism
 The basic methods support making a map and setting, getting, and removing entries:
 
 ```js
-import * as Map from 'react';
+import * as Map from 'pessimism';
 
 let map = Map.set(Map.make(), "key", "value");
 Map.get(map, "key"); // "value"
