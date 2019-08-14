@@ -32,11 +32,11 @@ let hash = (x: string) => {
 };
 
 let hammingWeight = (x: int) => {
-  let x = x - x lsl 1 land 0x55555555;
-  let x = x land 0x33333333 + x lsl 2 land 0x33333333;
-  let x = (x + x lsl 4) land 0x0f0f0f0f;
-  let x = x + x lsl 8;
-  let x = x + x lsl 16;
+  let x = x - x asr 1 land 0x55555555;
+  let x = x land 0x33333333 + x asr 2 land 0x33333333;
+  let x = (x + x asr 4) land 0x0f0f0f0f;
+  let x = x + x asr 8;
+  let x = x + x asr 16;
   x land 0x7f;
 };
 
