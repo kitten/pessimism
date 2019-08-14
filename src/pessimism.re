@@ -9,9 +9,8 @@ type boxT('v) = {
 
 type t('v) =
   | Index(int, array(t('v)))
-  | Value(k, 'v, int)
-  | ValueChain(k, boxT('v), int)
-  | Collision(array(boxT('v)), int);
+  | Collision(array(boxT('v)), int)
+  | Leaf(boxT('v), int);
 
 /*-- Helpers -------------------------------------*/
 
@@ -42,8 +41,6 @@ let hammingWeight = (x: int) => {
 
 let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
-let boxPerm = (k: k, v: 'v) => {key: k, value: v, id: 0, prev: None};
-
 /*-- Main methods -------------------------------------*/
 
 let get = (map: t('v), k: k): option('v) => {
@@ -68,32 +65,30 @@ let get = (map: t('v), k: k): option('v) => {
       | None => None
       }
 
-    | Value(key, value, _) when key === k => Some(value)
-    | ValueChain(key, {value}, _) when key === k => Some(value)
-
-    | Value(_)
-    | ValueChain(_) => None
+    | Leaf({key, value}, _) when key === k => Some(value)
+    | Leaf(_) => None
     };
 
   traverse(map, 0);
 };
 
+let rec make_index = (code_a, code_b, a, b, depth) => {
+  let pos_a = mask(code_a, depth);
+  let pos_b = mask(code_b, depth);
+  let bitmap = pos_a lor pos_b;
+  let contents =
+    if (pos_a === pos_b) {
+      [|make_index(code_a, code_b, a, b, depth + 1)|];
+    } else {
+      indexBit(bitmap, pos_a) !== 0 ? [|b, a|] : [|a, b|];
+    };
+
+  Index(bitmap, contents);
+};
+
 let set = (map: t('v), k: k, v: 'v): t('v) => {
   let code = hash(k);
-
-  let rec nest = (code_a, code_b, a, b, depth) => {
-    let pos_a = mask(code_a, depth);
-    let pos_b = mask(code_b, depth);
-    let bitmap = pos_a lor pos_b;
-    let contents =
-      if (pos_a === pos_b) {
-        [|nest(code_a, code_b, a, b, depth + 1)|];
-      } else {
-        indexBit(bitmap, pos_a) !== 0 ? [|b, a|] : [|a, b|];
-      };
-
-    Index(bitmap, contents);
-  };
+  let vbox = {key: k, value: v, id: 0, prev: None};
 
   let rec traverse = (node, depth) =>
     switch (node) {
@@ -103,42 +98,35 @@ let set = (map: t('v), k: k, v: 'v): t('v) => {
       let bitmap = bitmap lor pos;
       let index = indexBit(bitmap, pos);
 
-      let contents = Js.Array.copy(contents);
       let contents =
         if (has !== 0) {
           let node = traverse(Array.unsafe_get(contents, index), depth + 1);
+          let contents = Js.Array.copy(contents);
           Array.unsafe_set(contents, index, node);
           contents;
         } else {
-          let node = Value(k, v, code);
           Js.Array.spliceInPlace(
             ~pos=index,
             ~remove=0,
-            ~add=[|node|],
-            contents,
+            ~add=[|Leaf(vbox, code)|],
+            Js.Array.copy(contents),
           );
         };
-
       Index(bitmap, contents);
 
-    | Value(key, _, _)
-    | ValueChain(key, _, _) when key === k => Value(key, v, code)
+    | Leaf({key}, _) when key === k => Leaf(vbox, code)
 
-    | Value(key, value, c) when c === code =>
-      Collision([|boxPerm(k, v), boxPerm(key, value)|], code)
-
-    | ValueChain(_, box, c) when c === code =>
-      Collision([|boxPerm(k, v), box|], code)
+    | Leaf(box, c) when c === code => Collision([|vbox, box|], code)
 
     | Collision(bucket, c) when c === code =>
       let bucket =
         Js.Array.filter(({key}) => key !== k, bucket)
-        |> Js.Array.concat([|boxPerm(k, v)|]);
+        |> Js.Array.concat([|vbox|]);
       Collision(bucket, code);
 
-    | Value(_, _, c) as n
-    | ValueChain(_, _, c) as n
-    | Collision(_, c) as n => nest(c, code, n, Value(k, v, code), depth)
+    | Leaf(_, c) as n
+    | Collision(_, c) as n =>
+      make_index(c, code, n, Leaf(vbox, code), depth)
     };
 
   traverse(map, 0);
