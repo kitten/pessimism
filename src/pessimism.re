@@ -44,7 +44,8 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
 /*-- Main methods -------------------------------------*/
 
-let make = () => Index(0, [||]);
+let empty = Index(0, [||]);
+let make = () => empty;
 
 let get = (map: t('v), k: k): option('v) => {
   let code = hash(k);
@@ -169,7 +170,7 @@ let remove = (map: t('v), k: k): t('v) => {
         if (node === Empty) {
           let bitmap = bitmap lxor pos;
           if (bitmap === 0) {
-            Empty;
+            depth === 0 ? empty : Empty;
           } else {
             let contents = Js.Array.copy(contents);
             ignore(Js.Array.removeFromInPlace(~pos=index, contents));
