@@ -11,6 +11,7 @@ type t('v) =
   | Index(int, array(t('v)))
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
+  | RawLeaf(k, 'v, int)
   | Empty;
 
 /*-- Helpers -------------------------------------*/
@@ -70,9 +71,11 @@ let get = (map: t('v), k: k): option('v) => {
       }
 
     | Leaf({key, value}, _) when key === k => Some(value)
+    | RawLeaf(key, value, _) when key === k => Some(value)
 
     | Empty
     | Leaf(_) => None
+    | RawLeaf(_) => None
     };
 
   traverse(map, 0);
@@ -110,12 +113,13 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
         Array.unsafe_set(contents, index, node);
         Index(bitmap, contents);
       } else {
+        let n = optimistic ? Leaf(vbox, code) : RawLeaf(k, v, code);
         let contents = Js.Array.copy(contents);
         ignore(
           Js.Array.spliceInPlace(
             ~pos=index,
             ~remove=0,
-            ~add=[|Leaf(vbox, code)|],
+            ~add=[|n|],
             contents,
           ),
         );
@@ -124,10 +128,16 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
 
     | Leaf({key} as box, _) when key === k && optimistic =>
       Leaf({...vbox, prev: Some(box)}, code)
+    | RawLeaf(key, value, _) when key === k && optimistic =>
+      let prev = {key, value, id: 0, prev: None};
+      Leaf({...vbox, prev: Some(prev)}, code);
 
     | Leaf({key}, _) when key === k => Leaf(vbox, code)
+    | RawLeaf(key, _, _) when key === k => RawLeaf(k, v, code)
 
     | Leaf(box, c) when c === code => Collision([|vbox, box|], code)
+    | RawLeaf(key, value, c) when c === code =>
+      Collision([|vbox, {key, value, id: 0, prev: None}|], code)
 
     | Collision(bucket, c) when c === code =>
       let index = Js.Array.findIndex(({key}) => key === k, bucket);
@@ -144,11 +154,13 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
         Collision(Js.Array.concat(bucket, [|vbox|]), code);
       };
 
-    | Leaf(_, c) as n
-    | Collision(_, c) as n =>
-      make_index(c, code, n, Leaf(vbox, code), depth)
+    | Leaf(_, c)
+    | RawLeaf(_, _, c)
+    | Collision(_, c) =>
+      let n = optimistic ? Leaf(vbox, code) : RawLeaf(k, v, code);
+      make_index(c, code, node, n, depth);
 
-    | Empty => Leaf(vbox, code)
+    | Empty => RawLeaf(k, v, code)
     };
 
   traverse(map, 0);
@@ -187,14 +199,17 @@ let remove = (map: t('v), k: k): t('v) => {
         node;
       };
 
+    | RawLeaf(key, _, _) when key === k => Empty
     | Leaf({key}, _) when key === k => Empty
+
+    | RawLeaf(_) => node
     | Leaf(_) => node
 
     | Collision(bucket, c) when c === code =>
       let bucket = Js.Array.filter(({key}) => key === k, bucket);
       switch (bucket) {
       | [||] => Empty
-      | [|box|] => Leaf(box, code)
+      | [|box|] => RawLeaf(box.key, box.value, code)
       | _ => Collision(bucket, code)
       };
     | Collision(_) => node
@@ -220,11 +235,10 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
     switch (node) {
     | Leaf({id} as box, code) when id !== 0 =>
       switch (clear_box(box, optid)) {
+      | Some({key, value, id: 0}) => RawLeaf(key, value, code)
       | Some(box) => Leaf(box, code)
       | None => Empty
       }
-
-    | Leaf(_) as n => n
 
     | Index(bitmap, contents) =>
       let hasContent = ref(false);
@@ -265,9 +279,13 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
         );
       switch (bucket) {
       | [||] => Empty
+      | [|{key, value, id: 0}|] => RawLeaf(key, value, code)
       | [|box|] => Leaf(box, code)
       | _ => Collision(bucket, code)
       };
+
+    | Leaf(_)
+    | RawLeaf(_) => node
 
     | Empty => Empty
     };

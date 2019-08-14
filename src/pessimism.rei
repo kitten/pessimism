@@ -11,6 +11,7 @@ type t('v) =
   | Index(int, array(t('v)))
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
+  | RawLeaf(k, 'v, int)
   | Empty;
 
 let make: unit => t('v);
