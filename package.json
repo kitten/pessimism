@@ -7,7 +7,7 @@
   "main": "./dist/pessimism.js",
   "module": "./dist/pessimism.es.js",
   "jsnext:main": "./dist/pessimism.es.js",
-  "types": "./src/pessimism.d.ts",
+  "types": "./src/index.d.ts",
   "sideEffects": false,
   "files": [
     "src",
