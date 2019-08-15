@@ -76,3 +76,16 @@ it("sets optimistic values and overrides them if needed", () => {
   let after = map->get("key");
   expect([|before, after|]) == [|Some("temporary"), Some("permanent2")|];
 });
+
+it("supports setting and retrieving undefined", () => {
+  open Expect;
+  open! Expect.Operators;
+  let map =
+    make()
+    ->set("key", Js.Undefined.return("permanent"))
+    ->setOptimistic("key", Js.Undefined.empty, 1);
+  let before = map->getUndefined("key");
+  let map = map->clearOptimistic(1);
+  let after = map->getUndefined("key");
+  expect([|before, after|]) == [%raw "[undefined, 'permanent']"];
+});

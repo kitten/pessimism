@@ -48,7 +48,7 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 let empty = Index(0, [||]);
 let make = () => empty;
 
-let get = (map: t('v), k: k): option('v) => {
+let getUndefined = (map: t('v), k: k): Js.Undefined.t('v) => {
   let code = hash(k);
 
   let rec traverse = (node: t('a), depth: int) =>
@@ -61,25 +61,27 @@ let get = (map: t('v), k: k): option('v) => {
         let child = Js.Array.unsafe_get(contents, index);
         traverse(child, depth + 1);
       } else {
-        None;
+        Js.Undefined.empty;
       };
 
     | Collision(bucket, _) =>
       switch (Js.Array.find(({key}) => key === k, bucket)) {
-      | Some({value}) => Some(value)
-      | None => None
+      | Some({value}) => Js.Undefined.return(value)
+      | None => Js.Undefined.empty
       }
 
-    | Leaf({key, value}, _) when key === k => Some(value)
-    | RawLeaf(key, value, _) when key === k => Some(value)
+    | Leaf({key, value}, _)
+    | RawLeaf(key, value, _) when key === k => Js.Undefined.return(value)
 
     | Empty
-    | Leaf(_) => None
-    | RawLeaf(_) => None
+    | Leaf(_)
+    | RawLeaf(_) => Js.Undefined.empty
     };
 
   traverse(map, 0);
 };
+
+let get = (map, k) => Js.Undefined.toOption(getUndefined(map, k));
 
 let rec make_index = (code_a, code_b, a, b, depth) => {
   let pos_a = mask(code_a, depth);

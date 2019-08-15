@@ -52,7 +52,7 @@ const plugins = [
 ];
 
 const config = {
-  input: './src/pessimism.js',
+  input: './src/index.js',
   external: () => false,
   plugins,
   treeshake: {
