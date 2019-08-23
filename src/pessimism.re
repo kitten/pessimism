@@ -171,7 +171,8 @@ let rec removeTraverse = (node, depth, code, k) =>
     let has = bitmap land pos;
     let index = indexBit(bitmap, pos);
     if (has !== 0) {
-      let node = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
+      let node =
+        removeTraverse(Js.Array.unsafe_get(contents, index), depth + 1);
       if (node === Empty) {
         let bitmap = bitmap lxor pos;
         if (bitmap === 0) {
@@ -239,7 +240,7 @@ let clearTraverse = (node, depth, optid) =>
     let contents =
       Js.Array.map(
         node => {
-          let node = traverse(node, depth + 1);
+          let node = clearTraverse(node, depth + 1);
           if (node !== Empty) {
             hasContent := true;
           };
