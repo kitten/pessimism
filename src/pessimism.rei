@@ -9,16 +9,21 @@ type boxT('v) = {
   prev: option(boxT('v)),
 };
 
-type t('v) =
+type nodeT('v) =
   | Index({
       mutable bitmap: int,
-      mutable contents: array(t('v)),
+      mutable contents: array(nodeT('v)),
       owner: ownerT,
     })
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
   | RawLeaf(k, 'v, int)
   | Empty;
+
+type t('v) = {
+  mutable root: nodeT('v),
+  mutable owner: ownerT,
+};
 
 let make: unit => t('v);
 let get: (t('v), k) => option('v);

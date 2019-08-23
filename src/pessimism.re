@@ -9,16 +9,21 @@ type boxT('v) = {
   prev: option(boxT('v)),
 };
 
-type t('v) =
+type nodeT('v) =
   | Index({
       mutable bitmap: int,
-      mutable contents: array(t('v)),
+      mutable contents: array(nodeT('v)),
       owner: ownerT,
     })
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
   | RawLeaf(k, 'v, int)
   | Empty;
+
+type t('v) = {
+  mutable root: nodeT('v),
+  mutable owner: ownerT,
+};
 
 /*-- Helpers -------------------------------------*/
 
@@ -54,12 +59,13 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
 /*-- Main methods -------------------------------------*/
 
-let make = () => Index({bitmap: 0, contents: [||], owner: anon});
+let makeIndex = () => Index({bitmap: 0, contents: [||], owner: anon});
+let make = () => {root: makeIndex(), owner: anon};
 
 let getUndefined = (map: t('v), k: k): Js.Undefined.t('v) => {
   let code = hash(k);
 
-  let rec traverse = (node: t('a), depth: int) =>
+  let rec traverse = (node, depth) =>
     switch (node) {
     | Index({bitmap, contents}) =>
       let pos = mask(code, depth);
@@ -86,7 +92,7 @@ let getUndefined = (map: t('v), k: k): Js.Undefined.t('v) => {
     | RawLeaf(_) => Js.Undefined.empty
     };
 
-  traverse(map, 0);
+  traverse(map.root, 0);
 };
 
 let get = (map, k) => Js.Undefined.toOption(getUndefined(map, k));
@@ -173,7 +179,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
     | Empty => RawLeaf(k, v, code)
     };
 
-  traverse(map, 0);
+  {root: traverse(map.root, 0), owner: anon};
 };
 
 let set = (map, k, v) => setOptimistic(map, k, v, 0);
@@ -192,7 +198,7 @@ let remove = (map: t('v), k: k): t('v) => {
         if (node === Empty) {
           let bitmap = bitmap lxor pos;
           if (bitmap === 0) {
-            depth === 0 ? make() : Empty;
+            depth === 0 ? makeIndex() : Empty;
           } else {
             let contents = Js.Array.copy(contents);
             ignore(
@@ -227,7 +233,7 @@ let remove = (map: t('v), k: k): t('v) => {
     | Empty => Empty
     };
 
-  traverse(map, 0);
+  {root: traverse(map.root, 0), owner: anon};
 };
 
 let clear_box = (box: boxT('a), optid: int) => {
@@ -266,7 +272,7 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
       if (hasContent^) {
         Index({bitmap, contents, owner: anon});
       } else {
-        depth === 0 ? make() : Empty;
+        depth === 0 ? makeIndex() : Empty;
       };
 
     | Collision(bucket, code) =>
@@ -300,5 +306,5 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
     | Empty => Empty
     };
 
-  traverse(map, 0);
+  {root: traverse(map.root, 0), owner: anon};
 };
