@@ -1,6 +1,8 @@
+import { DEFAULT_EXTENSIONS } from '@babel/core';
 import commonjs from 'rollup-plugin-commonjs';
 import nodeResolve from 'rollup-plugin-node-resolve';
 import buble from 'rollup-plugin-buble';
+import babel from 'rollup-plugin-babel';
 import { terser } from 'rollup-plugin-terser';
 import prettier from 'rollup-plugin-prettier';
 
@@ -19,6 +21,14 @@ const plugins = [
     },
     objectAssign: 'Object.assign'
   }),
+  babel({
+    babelrc: false,
+    extensions: [...DEFAULT_EXTENSIONS, 'ts', 'tsx'],
+    exclude: 'node_modules/**',
+    presets: [],
+    plugins: [['babel-plugin-closure-elimination', {}], ['babel-plugin-tailcall-optimization', {}]]
+  }),
+
   terser({
     warnings: true,
     ecma: 5,
