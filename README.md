@@ -1,11 +1,10 @@
 <h2 align="center">pessimism</h2>
 <p align="center">
-<strong>A fast and compact HAMT-based KV-Cache with optimistic entries</strong>
+<strong>A fast and compact KV-Cache with optimistic entries</strong>
 </p>
 
 `pessimism` is a fast and compact KV-Cache primarily built for `@urql/exchange-graphcache`.
-It's a functional and immutable HAMT structure, which increases structural sharing, while
-keeping memory usage compact. It supports optimistic entries, which can be invalidated in a single go.
+It's a minimal `Map` hashmap structure, which supports optimistic entries, which can be invalidated in a single go.
 
 ## Usage
 
