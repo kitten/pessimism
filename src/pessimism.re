@@ -1,38 +1,24 @@
 type k = string;
 
-type ownerT = ref(unit);
-
 type boxT('v) = {
   key: k,
-  id: int,
-  value: 'v,
-  prev: option(boxT('v)),
+  mutable id: int,
+  mutable value: 'v,
+  mutable prev: option(boxT('v)),
 };
 
-type nodeT('v) =
-  | Index({
-      mutable bitmap: int,
-      mutable contents: array(nodeT('v)),
-      owner: ownerT,
+type valueT('v) =
+  | Raw({
+      key: k,
+      mutable value: 'v,
     })
-  | Collision(array(boxT('v)), int)
-  | Leaf(boxT('v), int)
-  | RawLeaf(k, 'v, int)
-  | Empty;
+  | Chain(boxT('v))
+  | Collision(array(boxT('v)));
 
-type t('v) = {
-  mutable root: nodeT('v),
-  mutable owner: ownerT,
-};
+type mapT('v);
+type t('v) = mapT(valueT('v));
 
 /*-- Helpers -------------------------------------*/
-
-let owner = () => ref();
-let anon = owner();
-
-let isOwner = (a: ownerT, b: ownerT) => a !== anon && a === b;
-
-let mask = (x: int, pos: int) => 1 lsl (x lsr (pos * 5) land 31);
 
 let smi = (x: int) => x lsr 1 land 0x40000000 lor (x land 0xbfffffff);
 
@@ -48,293 +34,151 @@ let hash = (x: string) => {
   smi(explode(5381, 0));
 };
 
-let hammingWeight = (x: int) => {
-  let x = x - x asr 1 land 0x55555555;
-  let x = x land 0x33333333 + x asr 2 land 0x33333333;
-  let x = (x + x asr 4) land 0x0f0f0f0f;
-  let x = x + x asr 8;
-  let x = x + x asr 16;
-  x land 0x7f;
-};
-
-let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
-
-let arraySet = Array.unsafe_set;
+let arraySet = Js.Array.unsafe_set;
+let arrayGet = Js.Array.unsafe_get;
 
 let arrayRemove = (arr, index) =>
   Js.Array.removeCountInPlace(~pos=index, ~count=1, arr) |> ignore;
 
-let arrayAdd = (arr, index, value) =>
-  Js.Array.spliceInPlace(~pos=index, ~remove=0, ~add=[|value|], arr)
-  |> ignore;
+[@bs.new] external makeMap: unit => mapT('v) = "Map";
+[@bs.send] external mapGet: (mapT('v), int) => Js.Undefined.t('v) = "get";
+[@bs.send] external mapSet: (mapT('v), int, 'v) => unit = "set";
+[@bs.send] external mapRem: (mapT('v), int) => unit = "delete";
+[@bs.send]
+external mapIter: (mapT('v), ('v, int) => unit) => unit = "forEach";
 
 /*-- Main methods -------------------------------------*/
 
-let makeIndex = owner => Index({bitmap: 0, contents: [||], owner});
-
-let update = (map, root) =>
-  if (map.owner !== anon) {
-    map.root = root;
-    map;
-  } else {
-    {owner: map.owner, root};
-  };
-
-let make = () => {root: makeIndex(anon), owner: anon};
-
-let asMutable = (map: t('v)) =>
-  if (map.owner === anon) {
-    {root: map.root, owner: owner()};
-  } else {
-    map;
-  };
-
-let asImmutable = (map: t('v)) => {
-  map.owner = anon;
-  map;
-};
+let make = (): t('v) => makeMap();
 
 let getUndefined = (map: t('v), k: k): Js.Undefined.t('v) => {
-  let code = hash(k);
+  let item = mapGet(map, hash(k));
 
-  let rec traverse = (node, depth) =>
-    switch (node) {
-    | Index({bitmap, contents}) =>
-      let pos = mask(code, depth);
-      let has = bitmap land pos;
-      if (has !== 0) {
-        let index = indexBit(bitmap, pos);
-        let child = Js.Array.unsafe_get(contents, index);
-        traverse(child, depth + 1);
-      } else {
-        Js.Undefined.empty;
-      };
-
-    | Collision(bucket, _) =>
+  if (Js.Undefined.testAny(item)) {
+    Js.Undefined.empty;
+  } else {
+    switch (Js.Undefined.getUnsafe(item)) {
+    | Collision(bucket) =>
       switch (Js.Array.find(({key}) => key === k, bucket)) {
       | Some({value}) => Js.Undefined.return(value)
       | None => Js.Undefined.empty
       }
 
-    | Leaf({key, value}, _)
-    | RawLeaf(key, value, _) when key === k => Js.Undefined.return(value)
+    | Raw({key, value}) when key === k => Js.Undefined.return(value)
+    | Raw(_) => Js.Undefined.empty
 
-    | Empty
-    | Leaf(_)
-    | RawLeaf(_) => Js.Undefined.empty
+    | Chain({key, value}) when key === k => Js.Undefined.return(value)
+    | Chain(_) => Js.Undefined.empty
     };
-
-  traverse(map.root, 0);
+  };
 };
 
 let get = (map, k) => Js.Undefined.toOption(getUndefined(map, k));
 
-let rec make_index = (code_a, code_b, a, b, depth, owner) => {
-  let pos_a = mask(code_a, depth);
-  let pos_b = mask(code_b, depth);
-  let bitmap = pos_a lor pos_b;
-  let contents =
-    if (pos_a === pos_b) {
-      [|make_index(code_a, code_b, a, b, depth + 1, owner)|];
-    } else {
-      indexBit(bitmap, pos_a) !== 0 ? [|b, a|] : [|a, b|];
-    };
-
-  Index({bitmap, contents, owner});
-};
-
-let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
-  let mapOwner = map.owner;
+let setOptimistic = (map: t('v), k: k, v: 'v, id: int) => {
   let code = hash(k);
   let optimistic = id !== 0;
-  let vbox = {key: k, value: v, id, prev: None};
+  let item = mapGet(map, code);
 
-  let rec traverse = (node, depth) =>
-    switch (node) {
-    | Index({bitmap, contents, owner} as record) =>
-      let pos = mask(code, depth);
-      let has = bitmap land pos;
-      let bitmap = bitmap lor pos;
-      let index = indexBit(bitmap, pos);
-      let mutate = isOwner(mapOwner, owner);
+  let newItem =
+    if (Js.Undefined.testAny(item)) {
+      optimistic
+        ? Chain({key: k, id, value: v, prev: None}) : Raw({key: k, value: v});
+    } else {
+      let item = Js.Undefined.getUnsafe(item);
 
-      if (has !== 0) {
-        let n = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
-        if (mutate) {
-          arraySet(contents, index, n);
-          record.bitmap = bitmap;
-          node;
+      switch (item) {
+      | Collision(bucket) =>
+        let index = Js.Array.findIndex(({key}) => key === k, bucket);
+        if (index > (-1)) {
+          let prev = arrayGet(bucket, index);
+          let box = {
+            key: k,
+            value: v,
+            id,
+            prev: optimistic ? Some(prev) : None,
+          };
+          arraySet(bucket, index, box);
         } else {
-          let contents = Js.Array.copy(contents);
-          arraySet(contents, index, n);
-          Index({bitmap, contents, owner: mapOwner});
+          let box = {key: k, value: v, id, prev: None};
+          Js.Array.push(box, bucket) |> ignore;
         };
-      } else {
-        let n = optimistic ? Leaf(vbox, code) : RawLeaf(k, v, code);
-        if (mutate) {
-          arrayAdd(contents, index, n);
-          record.bitmap = bitmap;
-          node;
-        } else {
-          let contents = Js.Array.copy(contents);
-          arrayAdd(contents, index, n);
-          Index({bitmap, contents, owner: mapOwner});
-        };
+
+        item;
+
+      | Chain({key}) when key === k && !optimistic => Raw({key, value: v})
+
+      | Chain({key} as prev) when key === k =>
+        let box = {key, value: v, id, prev: Some(prev)};
+        Chain(box);
+
+      | Raw({key} as record) when key === k && !optimistic =>
+        record.value = v;
+        item;
+
+      | Raw({key, value}) when key === k =>
+        let prev = {key, value, id: 0, prev: None};
+        let box = {key, value: v, id, prev: Some(prev)};
+        Chain(box);
+
+      | Chain(other) =>
+        let box = {key: k, value: v, id, prev: None};
+        Collision([|box, other|]);
+
+      | Raw({key, value}) =>
+        let box = {key: k, value: v, id, prev: None};
+        let other = {key, value, id: 0, prev: None};
+        Collision([|box, other|]);
       };
-
-    | Leaf({key} as box, _) when key === k && optimistic =>
-      Leaf({...vbox, prev: Some(box)}, code)
-    | RawLeaf(key, value, _) when key === k && optimistic =>
-      let prev = {key, value, id: 0, prev: None};
-      Leaf({...vbox, prev: Some(prev)}, code);
-
-    | Leaf({key}, _) when key === k => Leaf(vbox, code)
-    | RawLeaf(key, _, _) when key === k => RawLeaf(k, v, code)
-
-    | Leaf(box, c) when c === code => Collision([|vbox, box|], code)
-    | RawLeaf(key, value, c) when c === code =>
-      Collision([|vbox, {key, value, id: 0, prev: None}|], code)
-
-    | Collision(bucket, c) when c === code =>
-      let index = Js.Array.findIndex(({key}) => key === k, bucket);
-      if (index > (-1)) {
-        let prev = Js.Array.unsafe_get(bucket, index);
-        let bucket = Js.Array.copy(bucket);
-        Js.Array.unsafe_set(
-          bucket,
-          index,
-          optimistic ? {...vbox, prev: Some(prev)} : vbox,
-        );
-        Collision(bucket, code);
-      } else {
-        Collision(Js.Array.concat(bucket, [|vbox|]), code);
-      };
-
-    | Leaf(_, c)
-    | RawLeaf(_, _, c)
-    | Collision(_, c) =>
-      let n = optimistic ? Leaf(vbox, code) : RawLeaf(k, v, code);
-      make_index(c, code, node, n, depth, mapOwner);
-
-    | Empty => RawLeaf(k, v, code)
     };
 
-  update(map, traverse(map.root, 0));
+  mapSet(map, code, newItem);
+  map;
 };
 
 let set = (map, k, v) => setOptimistic(map, k, v, 0);
 
 let remove = (map: t('v), k: k): t('v) => {
-  let mapOwner = map.owner;
   let code = hash(k);
-
-  let rec traverse = (node, depth) =>
-    switch (node) {
-    | Index({bitmap, contents, owner} as record) =>
-      let pos = mask(code, depth);
-      let has = bitmap land pos;
-      let index = indexBit(bitmap, pos);
-      let mutate = isOwner(mapOwner, owner);
-
-      if (has !== 0) {
-        let n = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
-        if (n === Empty) {
-          let bitmap = bitmap lxor pos;
-          if (bitmap === 0) {
-            depth === 0 ? makeIndex(mapOwner) : Empty;
-          } else if (mutate) {
-            arrayRemove(contents, index);
-            record.bitmap = bitmap;
-            node;
-          } else {
-            let contents = Js.Array.copy(contents);
-            arrayRemove(contents, index);
-            Index({bitmap, contents, owner: mapOwner});
-          };
-        } else if (mutate) {
-          Js.Array.unsafe_set(contents, index, n);
-          node;
-        } else {
-          let contents = Js.Array.copy(contents);
-          Js.Array.unsafe_set(contents, index, n);
-          Index({bitmap, contents, owner: mapOwner});
-        };
-      } else {
-        node;
+  let item = mapGet(map, code);
+  if (!Js.Undefined.testAny(item)) {
+    switch (Js.Undefined.getUnsafe(item)) {
+    | Collision(bucket) =>
+      let index = Js.Array.findIndex(({key}) => key === k, bucket);
+      if (index > (-1)) {
+        arrayRemove(bucket, index);
       };
-
-    | RawLeaf(key, _, _) when key === k => Empty
-    | Leaf({key}, _) when key === k => Empty
-
-    | RawLeaf(_) => node
-    | Leaf(_) => node
-
-    | Collision(bucket, c) when c === code =>
-      let bucket = Js.Array.filter(({key}) => key === k, bucket);
-      switch (bucket) {
-      | [||] => Empty
-      | [|box|] => RawLeaf(box.key, box.value, code)
-      | _ => Collision(bucket, code)
-      };
-    | Collision(_) => node
-
-    | Empty => Empty
+    | Chain({key}) when key === k => mapRem(map, code)
+    | Raw({key}) when key === k => mapRem(map, code)
+    | Chain(_)
+    | Raw(_) => ()
     };
+  };
 
-  update(map, traverse(map.root, 0));
+  map;
 };
 
-let clear_box = (box: boxT('a), optid: int) => {
+let clearBoxOptimistic = (box: boxT('a), optid: int) => {
   let rec filter = (x: option(boxT('a))) =>
     switch (x) {
-    | Some({id, prev}) when id === optid => filter(prev)
-    | Some(b) => Some({...b, prev: filter(b.prev)})
+    | Some(b) when b.id !== optid =>
+      b.prev = filter(b.prev);
+      x;
+    | Some({prev}) => filter(prev)
     | None => None
     };
   filter(Some(box));
 };
 
 let clearOptimistic = (map: t('v), optid: int): t('v) => {
-  let mapOwner = map.owner;
-
-  let rec traverse = (node, depth) =>
+  mapIter(map, (node, code) =>
     switch (node) {
-    | Leaf({id} as box, code) when id !== 0 =>
-      switch (clear_box(box, optid)) {
-      | Some({key, value, id: 0}) => RawLeaf(key, value, code)
-      | Some(box) => Leaf(box, code)
-      | None => Empty
-      }
-
-    | Index({bitmap, contents, owner} as record) =>
-      let hasContent = ref(false);
-      let contents =
-        Js.Array.map(
-          node => {
-            let node = traverse(node, depth + 1);
-            if (node !== Empty) {
-              hasContent := true;
-            };
-            node;
-          },
-          contents,
-        );
-
-      if (hasContent^ && isOwner(mapOwner, owner)) {
-        record.contents = contents;
-        node;
-      } else if (hasContent^) {
-        Index({bitmap, contents, owner: mapOwner});
-      } else {
-        depth === 0 ? makeIndex(mapOwner) : Empty;
-      };
-
-    | Collision(bucket, code) =>
+    | Collision(bucket) =>
       let bucket =
         Js.Array.reduce(
           (acc, box) =>
             if (box.id !== 0) {
-              switch (clear_box(box, optid)) {
+              switch (clearBoxOptimistic(box, optid)) {
               | Some(box) =>
                 ignore(Js.Array.push(box, acc));
                 acc;
@@ -348,17 +192,22 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
           bucket,
         );
       switch (bucket) {
-      | [||] => Empty
-      | [|{key, value, id: 0}|] => RawLeaf(key, value, code)
-      | [|box|] => Leaf(box, code)
-      | _ => Collision(bucket, code)
+      | [||] => mapRem(map, code)
+      | [|{key, value, id: 0}|] => mapSet(map, code, Raw({key, value}))
+      | [|box|] => mapSet(map, code, Chain(box))
+      | _ => mapSet(map, code, Collision(bucket))
       };
 
-    | Leaf(_)
-    | RawLeaf(_) => node
+    | Chain(box) when box.id !== 0 =>
+      switch (clearBoxOptimistic(box, optid)) {
+      | None => mapRem(map, code)
+      | Some(box) => mapSet(map, code, Chain(box))
+      }
 
-    | Empty => Empty
-    };
+    | Chain(_)
+    | Raw(_) => ()
+    }
+  );
 
-  update(map, traverse(map.root, 0));
+  map;
 };

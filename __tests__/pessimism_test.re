@@ -30,25 +30,6 @@ it("works for values that are colliding", () => {
   expect(words_out) == Array.map(x => Some(x), words);
 });
 
-it("works for transitive changes", () => {
-  open Expect;
-  open! Expect.Operators;
-  let words = [|
-    "hello",
-    "world",
-    "test",
-    "hetairas",
-    "mentioner",
-    "heliotropes",
-    "neurospora",
-  |];
-  let map = ref(make()->asMutable);
-  Array.iter(word => map := set(map^, word, word), words);
-  let map = asImmutable(map^);
-  let words_out = Array.map(x => map->get(x), words);
-  expect(words_out) == Array.map(x => Some(x), words);
-});
-
 it("deletes values correctly", () => {
   open Expect;
   open! Expect.Operators;
