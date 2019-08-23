@@ -2,13 +2,16 @@ type k = string;
 
 type boxT('v) = {
   key: k,
-  value: 'v,
   id: int,
-  prev: option(boxT('v)),
+  mutable value: 'v,
+  mutable prev: option(boxT('v)),
 };
 
 type t('v) =
-  | Index(int, array(t('v)))
+  | Index({
+      mutable bitmap: int,
+      contents: array(t('v)),
+    })
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
   | RawLeaf(k, 'v, int)
@@ -45,15 +48,14 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
 /*-- Main methods -------------------------------------*/
 
-let empty = Index(0, [||]);
-let make = () => empty;
+let make = () => Index({bitmap: 0, contents: [||]});
 
 let getUndefined = (map: t('v), k: k): Js.Undefined.t('v) => {
   let code = hash(k);
 
   let rec traverse = (node: t('a), depth: int) =>
     switch (node) {
-    | Index(bitmap, contents) =>
+    | Index({bitmap, contents}) =>
       let pos = mask(code, depth);
       let has = bitmap land pos;
       if (has !== 0) {
@@ -94,7 +96,7 @@ let rec make_index = (code_a, code_b, a, b, depth) => {
       indexBit(bitmap, pos_a) !== 0 ? [|b, a|] : [|a, b|];
     };
 
-  Index(bitmap, contents);
+  Index({bitmap, contents});
 };
 
 let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
@@ -104,7 +106,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
 
   let rec traverse = (node, depth) =>
     switch (node) {
-    | Index(bitmap, contents) =>
+    | Index({bitmap, contents}) =>
       let pos = mask(code, depth);
       let has = bitmap land pos;
       let bitmap = bitmap lor pos;
@@ -113,7 +115,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
         let node = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
         let contents = Js.Array.copy(contents);
         Array.unsafe_set(contents, index, node);
-        Index(bitmap, contents);
+        Index({bitmap, contents});
       } else {
         let n = optimistic ? Leaf(vbox, code) : RawLeaf(k, v, code);
         let contents = Js.Array.copy(contents);
@@ -125,7 +127,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
             contents,
           ),
         );
-        Index(bitmap, contents);
+        Index({bitmap, contents});
       };
 
     | Leaf({key} as box, _) when key === k && optimistic =>
@@ -175,7 +177,7 @@ let remove = (map: t('v), k: k): t('v) => {
 
   let rec traverse = (node, depth) =>
     switch (node) {
-    | Index(bitmap, contents) =>
+    | Index({bitmap, contents}) =>
       let pos = mask(code, depth);
       let has = bitmap land pos;
       let index = indexBit(bitmap, pos);
@@ -184,18 +186,18 @@ let remove = (map: t('v), k: k): t('v) => {
         if (node === Empty) {
           let bitmap = bitmap lxor pos;
           if (bitmap === 0) {
-            depth === 0 ? empty : Empty;
+            depth === 0 ? Index({bitmap: 0, contents: [||]}) : Empty;
           } else {
             let contents = Js.Array.copy(contents);
             ignore(
               Js.Array.removeCountInPlace(~pos=index, ~count=1, contents),
             );
-            Index(bitmap, contents);
+            Index({bitmap, contents});
           };
         } else {
           let contents = Js.Array.copy(contents);
           Js.Array.unsafe_set(contents, index, node);
-          Index(bitmap, contents);
+          Index({bitmap, contents});
         };
       } else {
         node;
@@ -242,7 +244,7 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
       | None => Empty
       }
 
-    | Index(bitmap, contents) =>
+    | Index({bitmap, contents}) =>
       let hasContent = ref(false);
       let contents =
         Js.Array.map(
@@ -256,9 +258,9 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
           contents,
         );
       if (hasContent^) {
-        Index(bitmap, contents);
+        Index({bitmap, contents});
       } else {
-        depth === 0 ? empty : Empty;
+        depth === 0 ? Index({bitmap: 0, contents: [||]}) : Empty;
       };
 
     | Collision(bucket, code) =>

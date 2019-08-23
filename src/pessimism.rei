@@ -2,13 +2,16 @@ type k = string;
 
 type boxT('v) = {
   key: k,
-  value: 'v,
   id: int,
-  prev: option(boxT('v)),
+  mutable value: 'v,
+  mutable prev: option(boxT('v)),
 };
 
 type t('v) =
-  | Index(int, array(t('v)))
+  | Index({
+      mutable bitmap: int,
+      contents: array(t('v)),
+    })
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
   | RawLeaf(k, 'v, int)
