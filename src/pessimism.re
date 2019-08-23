@@ -1,16 +1,19 @@
 type k = string;
 
+type ownerT = ref(unit);
+
 type boxT('v) = {
   key: k,
   id: int,
-  mutable value: 'v,
-  mutable prev: option(boxT('v)),
+  value: 'v,
+  prev: option(boxT('v)),
 };
 
 type t('v) =
   | Index({
       mutable bitmap: int,
-      contents: array(t('v)),
+      mutable contents: array(t('v)),
+      owner: ownerT,
     })
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
@@ -18,6 +21,9 @@ type t('v) =
   | Empty;
 
 /*-- Helpers -------------------------------------*/
+
+let owner = () => ref();
+let anon = owner();
 
 let mask = (x: int, pos: int) => 1 lsl (x lsr (pos * 5) land 31);
 
@@ -48,7 +54,7 @@ let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
 
 /*-- Main methods -------------------------------------*/
 
-let make = () => Index({bitmap: 0, contents: [||]});
+let make = () => Index({bitmap: 0, contents: [||], owner: anon});
 
 let getUndefined = (map: t('v), k: k): Js.Undefined.t('v) => {
   let code = hash(k);
@@ -96,7 +102,7 @@ let rec make_index = (code_a, code_b, a, b, depth) => {
       indexBit(bitmap, pos_a) !== 0 ? [|b, a|] : [|a, b|];
     };
 
-  Index({bitmap, contents});
+  Index({bitmap, contents, owner: anon});
 };
 
 let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
@@ -115,7 +121,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
         let node = traverse(Js.Array.unsafe_get(contents, index), depth + 1);
         let contents = Js.Array.copy(contents);
         Array.unsafe_set(contents, index, node);
-        Index({bitmap, contents});
+        Index({bitmap, contents, owner: anon});
       } else {
         let n = optimistic ? Leaf(vbox, code) : RawLeaf(k, v, code);
         let contents = Js.Array.copy(contents);
@@ -127,7 +133,7 @@ let setOptimistic = (map: t('v), k: k, v: 'v, id: int): t('v) => {
             contents,
           ),
         );
-        Index({bitmap, contents});
+        Index({bitmap, contents, owner: anon});
       };
 
     | Leaf({key} as box, _) when key === k && optimistic =>
@@ -186,18 +192,18 @@ let remove = (map: t('v), k: k): t('v) => {
         if (node === Empty) {
           let bitmap = bitmap lxor pos;
           if (bitmap === 0) {
-            depth === 0 ? Index({bitmap: 0, contents: [||]}) : Empty;
+            depth === 0 ? make() : Empty;
           } else {
             let contents = Js.Array.copy(contents);
             ignore(
               Js.Array.removeCountInPlace(~pos=index, ~count=1, contents),
             );
-            Index({bitmap, contents});
+            Index({bitmap, contents, owner: anon});
           };
         } else {
           let contents = Js.Array.copy(contents);
           Js.Array.unsafe_set(contents, index, node);
-          Index({bitmap, contents});
+          Index({bitmap, contents, owner: anon});
         };
       } else {
         node;
@@ -258,9 +264,9 @@ let clearOptimistic = (map: t('v), optid: int): t('v) => {
           contents,
         );
       if (hasContent^) {
-        Index({bitmap, contents});
+        Index({bitmap, contents, owner: anon});
       } else {
-        depth === 0 ? Index({bitmap: 0, contents: [||]}) : Empty;
+        depth === 0 ? make() : Empty;
       };
 
     | Collision(bucket, code) =>

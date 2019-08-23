@@ -1,16 +1,19 @@
 type k = string;
 
+type ownerT = ref(unit);
+
 type boxT('v) = {
   key: k,
   id: int,
-  mutable value: 'v,
-  mutable prev: option(boxT('v)),
+  value: 'v,
+  prev: option(boxT('v)),
 };
 
 type t('v) =
   | Index({
       mutable bitmap: int,
-      contents: array(t('v)),
+      mutable contents: array(t('v)),
+      owner: ownerT,
     })
   | Collision(array(boxT('v)), int)
   | Leaf(boxT('v), int)
