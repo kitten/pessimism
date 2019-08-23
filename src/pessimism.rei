@@ -26,6 +26,8 @@ type t('v) = {
 };
 
 let make: unit => t('v);
+let asMutable: t('v) => t('v);
+let asImmutable: t('v) => t('v);
 let get: (t('v), k) => option('v);
 let getUndefined: (t('v), k) => Js.Undefined.t('v);
 let remove: (t('v), k) => t('v);
