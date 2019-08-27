@@ -72,6 +72,28 @@ let copyIndex = (index: t('v), owner: ownerT) =>
   !isOwner(owner, index.owner)
     ? {...index, contents: arrayCopy(index.contents), owner} : index;
 
+let traverseCopy = (map, code, owner) => {
+  let rec traverse = (index, depth) => {
+    let {bitmap, contents} = index;
+    let pos = mask(code, depth);
+    if (bitmap lor pos !== bitmap) {
+      (depth, index);
+    } else {
+      let i = indexBit(bitmap, pos);
+      let child = arrayGet(contents, i);
+      switch (child) {
+      | Index(childIndex) =>
+        let newChildIndex = copyIndex(childIndex, owner);
+        arraySet(contents, i, Index(newChildIndex));
+        traverse(newChildIndex, depth + 1);
+      | _ => (depth, index)
+      };
+    };
+  };
+
+  traverse(map, 0);
+};
+
 let rec resolveConflict = (codeA, codeB, nodeA, nodeB, depth, owner) => {
   let posA = mask(codeA, depth);
   let posB = mask(codeB, depth);
@@ -223,39 +245,21 @@ let get = (map, k) => Js.Undefined.toOption(getUndefined(map, k));
 
 let setOptimistic = (map: t('v), key: keyT, value: 'v, id: int): t('v) => {
   let {owner} = map;
-  let optimistic = id !== 0;
-  let code = hash(key);
-
-  let rec traverse = (index, depth) => {
-    let {bitmap, contents} = index;
-    let pos = mask(code, depth);
-    if (bitmap lor pos !== bitmap) {
-      (depth, index);
-    } else {
-      let i = indexBit(bitmap, pos);
-      let child = arrayGet(contents, i);
-      switch (child) {
-      | Index(childIndex) =>
-        let newChildIndex = copyIndex(childIndex, owner);
-        arraySet(contents, i, Index(newChildIndex));
-        traverse(newChildIndex, depth + 1);
-      | _ => (depth, index)
-      };
-    };
-  };
-
   let map = copyIndex(map, owner);
-  let (depth, index) = traverse(map, 0);
 
-  let {bitmap, contents} = index;
+  let code = hash(key);
+  let (depth, index) = traverseCopy(map, code, owner);
+
+  let optimistic = id !== 0;
   let pos = mask(code, depth);
-  let i = indexBit(bitmap, pos);
-  if (bitmap lor pos !== bitmap) {
+  let newBitmap = index.bitmap lor pos;
+  let i = indexBit(newBitmap, pos);
+  if (newBitmap !== index.bitmap) {
     arrayAdd(index.contents, i, Value(key, value, code));
-    index.bitmap = bitmap lor pos;
+    index.bitmap = newBitmap;
   } else {
     let node =
-      switch (arrayGet(contents, i)) {
+      switch (arrayGet(index.contents, i)) {
       | Value(k, v, _) when k === key && optimistic =>
         let prev = {key: k, value: v, id: 0, prev: None};
         let next = {key, value, id, prev: Some(prev)};
