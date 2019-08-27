@@ -89,22 +89,20 @@ let removeFromIndex = (index: t('v), pos: int, owner: ownerT) => {
   if (newBitmap !== bitmap) {
     let index = copyIndex(index, owner);
     arrayRemove(index.contents, indexBit(bitmap, pos));
-    index.bitmap = bitmap lxor pos;
+    index.bitmap = newBitmap;
     index;
   } else {
     index;
   };
 };
 
-let clearBox = (box: valueT('a), optid: int) => {
-  let rec filter = (x: option(valueT('a))) =>
-    switch (x) {
-    | Some({id, prev}) when id === optid => filter(prev)
-    | Some(b) => Some({...b, prev: filter(b.prev)})
-    | None => None
-    };
-  filter(Some(box));
-};
+let rec clearBox = (box: valueT('a), optid: int) =>
+  switch (box, box.prev) {
+  | ({id}, Some(prev)) when id === optid => clearBox(prev, optid)
+  | ({id}, None) when id === optid => None
+  | (_, Some(prev)) => Some({...box, prev: clearBox(prev, optid)})
+  | _ => Some(box)
+  };
 
 let clearOptimisticNode = (node: nodeT('v), optid: int) =>
   switch (node) {
