@@ -296,7 +296,7 @@ let setOptimistic = (map: t('v), key: keyT, value: 'v, id: int): t('v) => {
           optimistic
             ? Values({key, value, id, prev: None}, code)
             : Value(key, value, code);
-        resolveConflict(prevCode, code, prev, next, depth, owner);
+        resolveConflict(prevCode, code, prev, next, depth + 1, owner);
 
       | Index(_) as prev => prev /* this should never happen */
       };
