@@ -14,6 +14,7 @@ type nodeT('v) =
   | Value(keyT, 'v, hashT)
   | Values(valueT('v), hashT)
   | Collision(array(valueT('v)), hashT)
+  | Empty(hashT)
 and t('v) = {
   mutable bitmap: int,
   mutable contents: array(nodeT('v)),
@@ -63,6 +64,7 @@ external arrayRemove: (array('a), int, [@bs.as 1] _) => unit = "splice";
 [@bs.send]
 external arrayAdd: (array('a), int, [@bs.as 0] _, 'a) => unit = "splice";
 [@bs.send] external arrayPush: (array('a), 'a) => unit = "push";
+[@bs.get] external arraySize: array('a) => int = "length";
 
 /*-- Index helpers -------------------------------------*/
 
@@ -81,6 +83,19 @@ let rec resolveConflict = (codeA, codeB, nodeA, nodeB, depth, owner) => {
   Index({bitmap, contents, owner});
 };
 
+let removeFromIndex = (index: t('v), pos: int, owner: ownerT) => {
+  let {bitmap} = index;
+  let newBitmap = bitmap lxor pos;
+  if (newBitmap !== bitmap) {
+    let index = copyIndex(index, owner);
+    arrayRemove(index.contents, indexBit(bitmap, pos));
+    index.bitmap = bitmap lxor pos;
+    index;
+  } else {
+    index;
+  };
+};
+
 let addToBucket = (bucket: array(valueT('v)), box: valueT('v)) => {
   let bucket = arrayCopy(bucket);
   let optimistic = box.id !== 0;
@@ -96,6 +111,24 @@ let addToBucket = (bucket: array(valueT('v)), box: valueT('v)) => {
   };
 
   bucket;
+};
+
+let rec rebuildWithStack = (stack, depth, innerIndex, code, owner) => {
+  let pos = mask(code, depth);
+  switch (stack) {
+  | [index, ...rest] when innerIndex.bitmap === 0 =>
+    let index = removeFromIndex(index, pos, owner);
+    rebuildWithStack(rest, depth - 1, index, code, owner);
+  | [index, ...rest] =>
+    let index = copyIndex(index, owner);
+    arraySet(
+      index.contents,
+      indexBit(index.bitmap, pos),
+      Index(innerIndex),
+    );
+    rebuildWithStack(rest, depth - 1, index, code, owner);
+  | [] => innerIndex
+  };
 };
 
 /*-- Main methods -------------------------------------*/
@@ -133,7 +166,8 @@ let getUndefined = (map: t('v), key: keyT): Js.Undefined.t('v) => {
       | Values(box, _) when box.key === key => Js.Undefined.return(box.value)
 
       | Value(_)
-      | Values(_) => Js.Undefined.empty
+      | Values(_)
+      | Empty(_) => Js.Undefined.empty
       };
     };
   };
@@ -203,6 +237,10 @@ let setOptimistic = (map: t('v), key: keyT, value: 'v, id: int): t('v) => {
         let box = {key, value, id, prev: None};
         Collision(addToBucket(bucket, box), code);
 
+      | Empty(_) when optimistic =>
+        Values({key, value, id, prev: None}, code)
+      | Empty(_) => Value(key, value, code)
+
       | Value(_, _, prevCode) as prev
       | Values(_, prevCode) as prev
       | Collision(_, prevCode) as prev =>
@@ -222,3 +260,42 @@ let setOptimistic = (map: t('v), key: keyT, value: 'v, id: int): t('v) => {
 };
 
 let set = (map, k, v) => setOptimistic(map, k, v, 0);
+
+let remove = (map: t('v), key: keyT) => {
+  let {owner} = map;
+  let code = hash(key);
+
+  let rec traverse = (stack, index, depth) => {
+    let {bitmap, contents} = index;
+    let pos = mask(code, depth);
+    if (bitmap lor pos !== bitmap) {
+      map;
+    } else {
+      let i = indexBit(bitmap, pos);
+      let child = arrayGet(contents, i);
+      switch (child) {
+      | Index(index) => traverse([index, ...stack], index, depth + 1)
+
+      | Value(k, _, _)
+      | Values({key: k}, _) when k === key =>
+        let index = removeFromIndex(index, pos, owner);
+        rebuildWithStack(stack, depth - 1, index, code, owner);
+
+      | Collision(bucket, c) when c === code =>
+        let bucket = Js.Array.filter(x => x.key !== key, bucket);
+        if (arraySize(bucket) === 0) {
+          let index = removeFromIndex(index, pos, owner);
+          rebuildWithStack(stack, depth - 1, index, code, owner);
+        } else {
+          let index = copyIndex(index, owner);
+          arraySet(index.contents, i, Collision(bucket, code));
+          rebuildWithStack(stack, depth - 1, index, code, owner);
+        };
+
+      | _ => map
+      };
+    };
+  };
+
+  traverse([], map, 0);
+};
