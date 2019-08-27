@@ -32,24 +32,22 @@ let mask = (x: int, pos: int) => 1 lsl (x lsr (pos * 5) land 31);
 let smi = (x: int) => x lsr 1 land 0x40000000 lor (x land 0xbfffffff);
 
 let hash = (x: string): hashT => {
-  let length = String.length(x);
-  let rec explode = (h, i) =>
-    if (i < length) {
-      let h2 = h lsl 5 + h + int_of_char(String.unsafe_get(x, i));
-      explode(h2, i + 1);
-    } else {
-      h;
-    };
-  smi(explode(5381, 0));
+  let until = String.length(x) - 1;
+  let h = ref(5381);
+  for (i in 0 to until) {
+    h := h^ lsl 5 + h^ + int_of_char(String.unsafe_get(x, i));
+  };
+  smi(h^);
 };
 
-let hammingWeight = (x: int) => {
-  let x = x - x asr 1 land 0x55555555;
-  let x = x land 0x33333333 + x asr 2 land 0x33333333;
-  let x = (x + x asr 4) land 0x0f0f0f0f;
-  let x = x + x asr 8;
-  let x = x + x asr 16;
-  x land 0x7f;
+let hammingWeight = (input: int) => {
+  let x = ref(input);
+  x := x^ - x^ asr 1 land 0x55555555;
+  x := x^ land 0x33333333 + x^ asr 2 land 0x33333333;
+  x := (x^ + x^ asr 4) land 0x0f0f0f0f;
+  x := x^ + x^ asr 8;
+  x := x^ + x^ asr 16;
+  x^ land 0x7f;
 };
 
 let indexBit = (x: int, pos: int) => hammingWeight(x land (pos - 1));
