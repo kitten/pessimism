@@ -96,6 +96,52 @@ let removeFromIndex = (index: t('v), pos: int, owner: ownerT) => {
   };
 };
 
+let clearBox = (box: valueT('a), optid: int) => {
+  let rec filter = (x: option(valueT('a))) =>
+    switch (x) {
+    | Some({id, prev}) when id === optid => filter(prev)
+    | Some(b) => Some({...b, prev: filter(b.prev)})
+    | None => None
+    };
+  filter(Some(box));
+};
+
+let clearOptimisticNode = (node: nodeT('v), optid: int) =>
+  switch (node) {
+  | Empty(_)
+  | Index(_)
+  | Value(_) => node
+
+  | Values(box, _) when box.id === 0 => node
+
+  | Values(box, code) =>
+    switch (clearBox(box, optid)) {
+    | Some(box) => Values(box, code)
+    | None => Empty(code)
+    }
+
+  | Collision(bucket, code) =>
+    let bucket =
+      Js.Array.reduce(
+        (bucket, box) =>
+          if (box.id === 0) {
+            arrayPush(bucket, box);
+            bucket;
+          } else {
+            switch (clearBox(box, optid)) {
+            | Some(box) =>
+              arrayPush(bucket, box);
+              bucket;
+            | None => bucket
+            };
+          },
+        [||],
+        bucket,
+      );
+
+    arraySize(bucket) > 0 ? Collision(bucket, code) : Empty(code);
+  };
+
 let addToBucket = (bucket: array(valueT('v)), box: valueT('v)) => {
   let bucket = arrayCopy(bucket);
   let optimistic = box.id !== 0;
@@ -298,4 +344,33 @@ let remove = (map: t('v), key: keyT) => {
   };
 
   traverse([], map, 0);
+};
+
+let rec clearOptimistic = (map: t('v), optid: int): t('v) => {
+  let {owner} = map;
+  let index = copyIndex(map, owner);
+
+  for (x in 31 downto 0) {
+    let pos = 1 lsl x;
+    if (pos land index.bitmap !== 0) {
+      let i = indexBit(index.bitmap, pos);
+      switch (clearOptimisticNode(arrayGet(index.contents, i), optid)) {
+      | Index(index) =>
+        let innerIndex = clearOptimistic(index, optid);
+        if (innerIndex.bitmap === 0) {
+          arrayRemove(index.contents, i);
+          index.bitmap = index.bitmap lxor pos;
+        } else {
+          arraySet(index.contents, i, Index(innerIndex));
+        };
+
+      | Empty(_) =>
+        arrayRemove(index.contents, i);
+        index.bitmap = index.bitmap lxor pos;
+      | node => arraySet(index.contents, i, node)
+      };
+    };
+  };
+
+  index;
 };
