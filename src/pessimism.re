@@ -139,42 +139,76 @@ let clearOptimisticNode = (node: nodeT('v), optid: int) =>
     }
 
   | Collision(bucket, code) =>
-    let bucket =
-      Js.Array.reduce(
-        (bucket, box) =>
-          if (box.id === 0) {
-            arrayPush(bucket, box);
-            bucket;
-          } else {
-            switch (clearBox(box, optid)) {
-            | Some(box) =>
-              arrayPush(bucket, box);
-              bucket;
-            | None => bucket
-            };
-          },
-        [||],
-        bucket,
-      );
+    let bucketSize = arraySize(bucket);
+    let newBucket = [||];
+    let i = ref(0);
+    while (i^ < bucketSize) {
+      let box = arrayGet(bucket, i^);
+      if (box.id === 0) {
+        arrayPush(newBucket, box);
+      } else {
+        switch (clearBox(box, optid)) {
+        | Some(box) => arrayPush(newBucket, box)
+        | None => ()
+        };
+      };
+      i := i^ + 1;
+    };
 
-    arraySize(bucket) > 0 ? Collision(bucket, code) : Empty(code);
+    arraySize(newBucket) > 0 ? Collision(newBucket, code) : Empty(code);
   };
 
 let addToBucket = (bucket: array(valueT('v)), box: valueT('v)) => {
   let bucket = arrayCopy(bucket);
+  let bucketSize = arraySize(bucket);
   let optimistic = box.id !== 0;
-  let i = Js.Array.findIndex(x => x.key === box.key, bucket);
-  if (i > (-1) && optimistic) {
-    let prev = arrayGet(bucket, i);
-    if (optimistic) {
-      box.prev = Some(prev);
+  let i = ref(0);
+  let hasReplaced = ref(false);
+  while (i^ < bucketSize && ! hasReplaced^) {
+    let prev = arrayGet(bucket, i^);
+    if (prev.key === box.key) {
+      if (optimistic) {
+        box.prev = Some(prev);
+      };
+      arraySet(bucket, i^, box);
+      hasReplaced := true;
     };
-    arraySet(bucket, i, box);
-  } else {
-    arrayPush(bucket, box);
+
+    i := i^ + 1;
   };
 
+  if (! hasReplaced^) {
+    arrayPush(bucket, box);
+  };
   bucket;
+};
+
+let removeFromBucket = (bucket: array(valueT('v)), key: keyT) => {
+  let bucketSize = arraySize(bucket);
+  let newBucket = [||];
+  let i = ref(0);
+  while (i^ < bucketSize) {
+    let box = arrayGet(bucket, i^);
+    if (box.key !== key) {
+      arrayPush(newBucket, box);
+    };
+    i := i^ + 1;
+  };
+  newBucket;
+};
+
+let findInBucket = (bucket: array(valueT('v)), key: keyT) => {
+  let bucketSize = arraySize(bucket);
+  let res = ref(Js.Undefined.empty);
+  let i = ref(0);
+  while (Js.Undefined.testAny(res^) && i^ < bucketSize) {
+    let box = arrayGet(bucket, i^);
+    if (box.key === key) {
+      res := Js.Undefined.return(box.value);
+    };
+    i := i^ + 1;
+  };
+  res^;
 };
 
 let rec rebuildWithStack = (stack, depth, innerIndex, code, owner) => {
@@ -220,12 +254,7 @@ let getUndefined = (map: t('v), key: keyT): Js.Undefined.t('v) => {
       switch (child) {
       | Index(index) => traverse(index, depth + 1)
 
-      | Collision(bucket, _) =>
-        switch (Js.Array.find(box => box.key === key, bucket)) {
-        | Some({value}) => Js.Undefined.return(value)
-        | None => Js.Undefined.empty
-        }
-
+      | Collision(bucket, _) => findInBucket(bucket, key)
       | Value(k, v, _) when k === key => Js.Undefined.return(v)
       | Values(box, _) when box.key === key => Js.Undefined.return(box.value)
 
@@ -328,7 +357,7 @@ let remove = (map: t('v), key: keyT) => {
         rebuildWithStack(stack, depth - 1, index, code, owner);
 
       | Collision(bucket, c) when c === code =>
-        let bucket = Js.Array.filter(x => x.key !== key, bucket);
+        let bucket = removeFromBucket(bucket, key);
         if (arraySize(bucket) === 0) {
           let index = removeFromIndex(index, pos, owner);
           rebuildWithStack(stack, depth - 1, index, code, owner);

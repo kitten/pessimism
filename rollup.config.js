@@ -34,6 +34,11 @@ const plugins = [
     ie8: false,
     mangle: true,
     toplevel: true,
+    keep_fnames: true,
+    compress: {
+      reduce_funcs: false,
+      passes: 4
+    },
     output: {
       beautify: true,
       braces: true,
