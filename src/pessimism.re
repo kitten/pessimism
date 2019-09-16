@@ -378,30 +378,29 @@ let remove = (map: t('v), key: keyT) => {
 let rec clearOptimistic = (map: t('v), optid: int): t('v) => {
   let {owner} = map;
   let index = copyIndex(map, owner);
-  let newBitmap = ref(index.bitmap);
 
-  for (x in 31 downto 0) {
+  for (x in 0 to 31) {
     let pos = 1 lsl x;
     if (pos land index.bitmap !== 0) {
       let i = indexBit(index.bitmap, pos);
       switch (clearOptimisticNode(arrayGet(index.contents, i), optid)) {
-      | Index(index) =>
-        let innerIndex = clearOptimistic(index, optid);
-        if (innerIndex.bitmap === 0) {
+      | Index(innerIndex) =>
+        let newInnerIndex = clearOptimistic(innerIndex, optid);
+        if (newInnerIndex.bitmap === 0) {
           arrayRemove(index.contents, i);
           index.bitmap = index.bitmap lxor pos;
         } else {
-          arraySet(index.contents, i, Index(innerIndex));
+          arraySet(index.contents, i, Index(newInnerIndex));
         };
 
       | Empty(_) =>
         arrayRemove(index.contents, i);
-        newBitmap := newBitmap^ lxor pos;
+        index.bitmap = index.bitmap lxor pos;
+
       | node => arraySet(index.contents, i, node)
       };
     };
   };
 
-  index.bitmap = newBitmap^;
   index;
 };
