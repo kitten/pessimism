@@ -211,20 +211,17 @@ let findInBucket = (bucket: array(valueT('v)), key: keyT) => {
   res^;
 };
 
-let rec rebuildWithStack = (stack, depth, innerIndex, code, owner) => {
+let rec rebuildWithStack = (stack, innerIndex, depth, code, owner) => {
   let pos = mask(code, depth);
   switch (stack) {
   | [index, ...rest] when innerIndex.bitmap === 0 =>
     let index = removeFromIndex(index, pos, owner);
-    rebuildWithStack(rest, depth - 1, index, code, owner);
+    rebuildWithStack(rest, index, depth - 1, code, owner);
   | [index, ...rest] =>
     let index = copyIndex(index, owner);
-    arraySet(
-      index.contents,
-      indexBit(index.bitmap, pos),
-      Index(innerIndex),
-    );
-    rebuildWithStack(rest, depth - 1, index, code, owner);
+    let i = indexBit(index.bitmap, pos);
+    arraySet(index.contents, i, Index(innerIndex));
+    rebuildWithStack(rest, index, depth - 1, code, owner);
   | [] => innerIndex
   };
 };
@@ -349,22 +346,23 @@ let remove = (map: t('v), key: keyT) => {
       let i = indexBit(bitmap, pos);
       let child = arrayGet(contents, i);
       switch (child) {
-      | Index(index) => traverse([index, ...stack], index, depth + 1)
+      | Index(innerIndex) =>
+        traverse([index, ...stack], innerIndex, depth + 1)
 
       | Value(k, _, _)
       | Values({key: k}, _) when k === key =>
         let index = removeFromIndex(index, pos, owner);
-        rebuildWithStack(stack, depth - 1, index, code, owner);
+        rebuildWithStack(stack, index, depth - 1, code, owner);
 
       | Collision(bucket, c) when c === code =>
         let bucket = removeFromBucket(bucket, key);
         if (arraySize(bucket) === 0) {
           let index = removeFromIndex(index, pos, owner);
-          rebuildWithStack(stack, depth - 1, index, code, owner);
+          rebuildWithStack(stack, index, depth - 1, code, owner);
         } else {
           let index = copyIndex(index, owner);
           arraySet(index.contents, i, Collision(bucket, code));
-          rebuildWithStack(stack, depth - 1, index, code, owner);
+          rebuildWithStack(stack, index, depth - 1, code, owner);
         };
 
       | _ => map
