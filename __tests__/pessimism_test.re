@@ -3,6 +3,10 @@ open Pessimism;
 
 let it = test;
 
+/* These two strings collide and cause an Index to be created */
+let ca = "coest";
+let cb = "01pcj";
+
 it("works for values on a single Index node", () => {
   open Expect;
   open! Expect.Operators;
@@ -14,6 +18,16 @@ it("works for values on a single Index node", () => {
     ->set(words[2], words[2]);
   let words_out = Array.map(x => map->get(x), words);
   expect(words_out) == Array.map(x => Some(x), words);
+});
+
+it("works for values on nested Index nodes", () => {
+  open Expect;
+  open! Expect.Operators;
+
+  let map = make()->set(ca, ca)->set(cb, cb);
+  let expected = [|Some(ca), Some(cb)|];
+  let actual = [|map->get(ca), map->get(cb)|];
+  expect(actual) == expected;
 });
 
 it("works for values that are colliding", () => {
@@ -62,6 +76,16 @@ it("deletes values correctly", () => {
   let a = map->get(words[0]);
   let b = map->get(words[1]);
   expect([|a, b|]) == [|Some(words[0]), None|];
+});
+
+it("deleted values correctly on nested Index nodes", () => {
+  open Expect;
+  open! Expect.Operators;
+
+  let map = make()->set(ca, ca)->set(cb, cb)->remove(ca);
+  let expected = [|None, Some(cb)|];
+  let actual = [|map->get(ca), map->get(cb)|];
+  expect(actual) == expected;
 });
 
 it("sets optimistic values and clears them", () => {
